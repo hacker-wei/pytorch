@@ -1,3 +1,3 @@
 # pytorch
 一、linear_regression 
-![linear_regression](pytorch/1.PNG)
+![linear_regression](https://github.com/hacker-wei/pytorch/blob/master/1.PNG)
