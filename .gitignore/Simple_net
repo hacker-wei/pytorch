@@ -1,0 +1,124 @@
+import os
+os.environ['CUDA_DEVICE_ORDER']="PCI_BUS_ID"
+os.environ['CUDA_VISIBLE_DEVICES']='0'
+import torch
+from torch.autograd import Variable
+from torch import nn
+from torch import optim
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+import net
+
+# 简单的三层网络
+class simpleNet(nn.Module):
+    def __init__(self, in_dim, n_hidden_1, n_hidden_2, out_dim):
+        super(simpleNet, self).__init__()
+        self.layer1 = nn.Linear(in_dim, n_hidden_1)
+        self.layer2 = nn.Linear(n_hidden_1, n_hidden_2)
+        self.layer3 = nn.Linear(n_hidden_2, out_dim)
+
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        return x
+
+# 添加激活函数
+class Activation_Net(nn.Module):
+    def __init__(self, in_dim, n_hidden_1, n_hidden_2, out_dim):
+        super(Activation_Net,self).__init__()
+        # 这是为了将网络的层组合在一起，比如这里的nn.Linear() 和 nn.Relu()组合在一起作为self.layer
+        self.layer1 = nn.Sequential(nn.Linear(in_dim, n_hidden_1), nn.ReLU(True))
+        self.layer2 = nn.Sequential(nn.Linear(n_hidden_1, n_hidden_2), nn.ReLU(True))
+        self.layer3 = nn.Sequential(nn.Linear(n_hidden_2, out_dim), nn.ReLU(True))
+
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        return x
+
+
+# 添加批标准化
+class Batch_Net(nn.Module):
+    def __init__(self, in_dim, n_hidden_1, n_hidden_2, out_dim):
+        super(Batch_Net, self).__init__()
+        self.layer1 = nn.Sequential(nn.Linear(in_dim, n_hidden_1), nn.BatchNorm1d(n_hidden_1), nn.ReLU(True))
+        self.layer2 = nn.Sequential(nn.Linear(n_hidden_1, n_hidden_2), nn.BatchNorm1d(n_hidden_2), nn.ReLU(True))
+        self.layer3 = nn.Sequential(nn.Linear(n_hidden_2, out_dim))
+
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        return x
+
+
+batch_size = 32
+learning_rate = 1e-2
+num_epoches = 30
+
+# compose操作是将所有的预处理操作组合到一起
+data_ft = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5])])
+
+# load data
+train_dataset = datasets.MNIST(root='./data', train=True, transform=data_ft, download=True)
+test_dataset = datasets.MNIST(root='./data', train=False, transform=data_ft)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+
+# Load net and def loss and optimizer
+model = net.Batch_Net(28*28, 300, 100, 10)
+if torch.cuda.is_available():
+    model = model.cuda()
+else:
+    model = model
+
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(model.parameters(), lr=learning_rate)
+
+all_loss = 0
+for each_poch in range(num_epoches):
+    for data in train_loader:
+        img, label = data
+        img = img.view(img.size(0), -1)
+        if torch.cuda.is_available():
+            img = Variable(img).cuda()
+            label = Variable(label).cuda()
+        else:
+            img = Variable(img)
+            label = Variable(label)
+        target = model(img)
+        loss = criterion(target, label)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        all_loss = loss
+       # print("Loss is {}",format(loss))
+    each_poch = each_poch +1
+    print("poch {}".format(each_poch), ", loss is {}".format(all_loss))
+
+
+model.eval()
+eval_loss = 0.0
+eval_acc = 0.0
+for data in test_loader:
+    img, label = data
+    img = img.view(img.size(0), -1)
+    if torch.cuda.is_available():
+        img = Variable(img).cuda()
+        label = Variable(label).cuda()
+    else:
+        img = Variable(img)
+        label = Variable(label)
+    out = model(img)
+    loss = criterion(out,label)
+    eval_loss +=loss.data*label.size(0)
+    _, pred = torch.max(out, 1)
+    num_correct = torch.sum((pred==label))
+    eval_acc += num_correct.data
+eval_acc = eval_acc.float()
+print('Test Loss:{:.6f}'.format(eval_acc/(len(test_dataset))))
+print((len(test_dataset)))
+print('Test Loss:{:.6f}'.format(eval_loss/(len(test_dataset))))
+
